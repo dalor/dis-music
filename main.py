@@ -5,7 +5,7 @@ from discord.ext import commands
 from music import MusicController
 import re
 
-TOKEN = os.environ['BOT_ID']
+TOKEN = os.environ['TOKEN']
 
 client = commands.Bot(command_prefix='')
 controller = MusicController()
