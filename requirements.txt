@@ -1,0 +1,5 @@
+discord.py[voice]
+dnspython
+PyNaCl
+async-timeout
+youtube_dl
