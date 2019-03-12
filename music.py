@@ -14,6 +14,7 @@ ydl_opts = {
     'get-thumbnail': True,
     'skip-download': True,
     'get-duration': True,
+    'ignore-errors': True,
     #'quiet': True
 }
 
