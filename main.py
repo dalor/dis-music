@@ -8,6 +8,7 @@ import re
 TOKEN = os.environ['TOKEN']
 
 client = commands.Bot(command_prefix='')
+    
 controller = MusicController()
 
 async def connect_voice_channel(ctx):
@@ -16,7 +17,10 @@ async def connect_voice_channel(ctx):
         server = ctx.message.server
         voice_client = client.voice_client_in(server)
         if not voice_client:
-            voice_client = await client.join_voice_channel(channel)
+            try:
+                voice_client = await client.join_voice_channel(channel)
+            except:
+                return
         elif channel != voice_client.channel:
             await voice_client.move_to(channel)
         return voice_client
