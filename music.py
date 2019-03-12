@@ -2,7 +2,27 @@ import youtube_dl
 from threading import Thread
 from time import sleep
 import os
+import subprocess
 from uuid import uuid4 as random_token
+
+all_filenames = []
+
+ydl_opts = {
+    'format': 'bestaudio/best',
+    'get-url': True,
+    'get-title': True,
+    'get-thumbnail': True,
+    'skip-download': True,
+    'get-duration': True,
+    #'quiet': True
+}
+
+def check_by_youtube_dl(url):
+    try:
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+            return ydl.extract_info(url, download=False)
+    except:
+        return None
 
 class DLParser(Thread):
     def __init__(self, url, queue, voice_client):
@@ -10,49 +30,90 @@ class DLParser(Thread):
         self.url = url
         self.queue = queue
         self.voice_client = voice_client
-        self.ydl_opts = {
-            'format': 'bestaudio/best',
-            'get-url': True,
-            'get-title': True,
-            'get-thumbnail': True,
-            'skip-download': True,
-            'get-duration': True,
-            #'quiet': True
-        }
-
-    def check_by_youtube_dl(self, url):
-        try:
-            with youtube_dl.YoutubeDL(self.ydl_opts) as ydl:
-                return ydl.extract_info(url, download=False)
-        except:
-            return None
 
     def run(self):
-        res = self.check_by_youtube_dl(self.url)
+        res = check_by_youtube_dl(self.url)
         if res:
             if 'entries' in res:
                 for item in res['entries']:
                    self.queue.add(QueueItem(item, self.voice_client))
             else:
                 self.queue.add(QueueItem(res, self.voice_client))
-    
-
+                
 class QueueItem:
     def __init__(self, info, voice_client):
-        self.url = info['url']
-        self.title = info['title']
+        self.page = info['webpage_url']
         self.voice_client = voice_client
         self.player = None
+        self.url = None
+        self.title = None
+        self.duration = None
+        self.thumbnail = None
+        self.filename = None
+        self.generate_filename()
+        self.load(info)
+        self.download()
 
     def exit(self):
         self.player.stop()
+        self.delete()
+        
+    def delete(self):
+        if self.file_is_exists():
+            try:
+                os.remove(self.filename)
+            except PermissionError:
+                sleep(0.1)
+                self.delete()
 
+    def file_is_exists(self):
+        return self.filename and os.path.isfile(self.filename)
+            
+    def load(self, info):
+        self.url = info['url']
+        self.title = info['title']
+        self.duration = info['duration']
+        self.thumbnail = info['thumbnail']
+
+    def generate_filename(self):
+        filename = '{}.wav'.format(random_token())
+        while os.path.isfile(filename) or filename in all_filenames:
+            filename = '{}.wav'.format(random_token())
+        all_filenames.append(filename)
+        self.filename = filename
+     
+    def download(self):
+        subprocess.Popen([
+            'ffmpeg',
+            '-i', self.url,
+            '-vn',
+            '-acodec', 'adpcm_ima_wav',
+            self.filename
+        ], stderr=subprocess.DEVNULL).wait()
+        
+    def reload(self):
+        self.load(check_by_youtube_dl(self.page))
+
+    def file_checker(self):
+        if not self.file_is_exists():
+            self.download()
+            if not self.file_is_exists():
+                self.reload()
+                self.download()
+                if not self.file_is_exists():
+                    return False
+        return True
+        
     def set_player(self, vol):
-        self.player = self.voice_client.create_ffmpeg_player(self.url)
-        self.player.volume = vol
+        if self.file_checker():
+            self.player = self.voice_client.create_ffmpeg_player(self.filename)
+            self.player.volume = vol
+            return True
+        else:
+            return False
 
     def __repr__(self):
-        return self.title
+        return '`{}`({})'.format(self.title, self.duration)
 
 class QueueController(Thread):
     def __init__(self, server_id, volume=1.):
@@ -76,12 +137,14 @@ class QueueController(Thread):
             return self.queue[0]
         else:
             None
-
+    
     def play_next(self, anyway=True):
         next_ = self.go_next(anyway)
         if next_:
-            next_.set_player(self.volume)
-            next_.player.start()
+            if next_.set_player(self.volume):
+                next_.player.start()
+            else:
+                self.play_next(anyway)
        
     def run(self):
         while True:
@@ -90,12 +153,10 @@ class QueueController(Thread):
                     self.play_next(anyway=False)
             sleep(self.wait)
 
-    def the_last(old):
-        def new(self, *args):
-            if self.queue:
-                return old(self, self.queue[0], *args)
-        return new
-
+    def update_voice_client(voice_client):
+        for one in self.queue:
+            one.voice_client = voice_client
+    
     def the_last(old):
         def new(self, *args):
             if self.queue:
